@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Cuánto vale mi tiempo",
+  "short_name": "Mi tiempo",
+  "description": "Calculá un precio para tus productos o servicios, paso a paso.",
+  "lang": "es-AR",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f7f4ed",
+  "theme_color": "#f7f4ed",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
