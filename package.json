@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit",
-    "test": "node --disable-warning=ExperimentalWarning --test",
+    "test": "node --disable-warning=ExperimentalWarning --test src/pricing.test.ts .github/scripts/merge-dependabot.test.cjs",
     "build": "npm run typecheck && vite build && node scripts/build-sw.mjs",
     "preview": "vite preview"
   },

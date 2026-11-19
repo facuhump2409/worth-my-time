@@ -1,13 +1,12 @@
 import './style.css'
-import { activeFields, calculate, hourlyRate, newDraft, validateField, type Draft, type Field } from './pricing'
-import { benchmarkContent } from './references'
+import { activitiesFor, validActivity } from './activities'
+import { activeFields, calculate, hourlyRate, isMoneyField, newDraft, pricingSteps, stepIndex, validateField, type Draft, type Field } from './pricing'
+import { formatMoneyInput, money } from './money'
+import { activityGuidance, benchmarkContent, salaryGuidance } from './references'
 import { loadDraft, registerOffline, saveDraft } from './storage'
 
 const root = document.querySelector<HTMLDivElement>('#app')!
-const currency = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS' })
-const smallCurrency = new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumSignificantDigits: 2 })
 const number = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
-const money = (value: number) => (value > 0 && value < 0.01 ? smallCurrency : currency).format(value)
 
 const icons = {
   mark: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5v5h4M4 20h4"/>',
@@ -23,19 +22,19 @@ const icons = {
 const icon = (name: keyof typeof icons) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`
 
-const steps = ['Tu hora', 'Tu tiempo', 'Insumos y gastos', 'Lugar de trabajo', 'Ganancia']
+const steps = ['Tu rubro', 'Tu hora', 'Tu tiempo', 'Insumos y gastos', 'Lugar de trabajo', 'Ganancia']
 const fields: Record<Field, [string, string, string, string?]> = {
-  hourly: ['¿Cuánto querés cobrar por hora?', 'ARS', 'Ej. 8000', 'Es lo que querés pagarte por trabajar, sin contar gastos ni ganancia.'],
-  income: ['¿Cuánto querés cobrar por mes por tu trabajo?', 'ARS', 'Ej. 800000', 'Ingresá tu objetivo de remuneración personal antes de gastos del negocio.'],
+  hourly: ['¿Cuánto querés cobrar por hora?', 'ARS', 'Ej. 8.000,00', 'Es lo que querés pagarte por trabajar, sin contar gastos ni ganancia. Usá coma para los centavos.'],
+  income: ['¿Cuánto querés cobrar por mes por tu trabajo?', 'ARS', 'Ej. 800.000,00', 'Ingresá tu objetivo de remuneración personal antes de gastos del negocio. Usá coma para los centavos.'],
   billable: ['Horas que podés cobrar por mes', 'h', 'Ej. 100', 'Contá solo las horas que podés asignar a trabajos, no todo tu tiempo disponible. Incluí traslados si los cobrás.'],
   hours: ['Horas de trabajo', 'h', 'Ej. 2,5', 'Contá preparación, producción o ejecución y cierre. El traslado se carga aparte.'],
   units: ['Unidades listas para vender', 'u.', 'Ej. 10', 'Contá tal como vendés: si vendés aros de a pares, cada par es una unidad.'],
-  materials: ['Materiales e insumos', 'ARS', '0', 'Sumá lo que usás para este trabajo: por ejemplo, ingredientes, piezas, empaques o consumibles.'],
-  fixed: ['Gastos fijos por mes', 'ARS', '0', 'Sumá alquiler, suscripciones u otros gastos del negocio. Se distribuyen según las horas del trabajo y de traslado, si lo hay.'],
-  local: ['Gastos extra del lugar', 'ARS', '0', 'Solo los costos de este trabajo que no incluiste antes, como alquiler puntual de un espacio o un consumo extra.'],
-  travel: ['Gastos de traslado', 'ARS', '0', 'Sumá ida y vuelta: transporte, combustible, peajes o estacionamiento.'],
+  materials: ['Materiales e insumos', 'ARS', '0,00', 'Sumá lo que usás para este trabajo: por ejemplo, ingredientes, piezas, empaques o consumibles.'],
+  fixed: ['Gastos fijos por mes', 'ARS', '0,00', 'Sumá alquiler, suscripciones u otros gastos del negocio. Se distribuyen según las horas del trabajo y de traslado, si lo hay.'],
+  local: ['Gastos extra del lugar', 'ARS', '0,00', 'Solo los costos de este trabajo que no incluiste antes, como alquiler puntual de un espacio o un consumo extra.'],
+  travel: ['Gastos de traslado', 'ARS', '0,00', 'Sumá ida y vuelta: transporte, combustible, peajes o estacionamiento.'],
   travelHours: ['Tiempo de traslado', 'h', '0', 'Sumá ida y vuelta. Estas horas también se pagan a tu tarifa.'],
-  markup: ['Ganancia sobre tus costos', '%', '0', 'Es un recargo, no un margen sobre el precio final. Si tu costo es $100 y agregás 20%, cobrás $120.'],
+  markup: ['Ganancia sobre tus costos', '%', '0', `Es un recargo, no un margen sobre el precio final. Si tu costo es ${money(100)} y agregás 20%, cobrás ${money(120)}.`],
 }
 
 const loaded = loadDraft()
@@ -48,8 +47,9 @@ let installEvent: (Event & { prompt(): Promise<unknown> }) | null = null
 const stage = () => draft.kind === 'product' ? 'esta tanda' : 'este servicio'
 const field = (name: Field) => {
   const [label, unit, placeholder, hint] = fields[name]
+  const monetary = isMoneyField(name)
   return `<div class="field"><label for="${name}">${label}</label>
-    <div class="input-shell"><input id="${name}" name="${name}" type="text" inputmode="${name === 'units' ? 'numeric' : 'decimal'}"
+    <div class="input-shell ${monetary ? 'money-input' : ''}">${monetary ? '<span class="currency-prefix" aria-hidden="true">$</span>' : ''}<input id="${name}" name="${name}" type="text" inputmode="${name === 'units' ? 'numeric' : 'decimal'}"
       maxlength="32" autocomplete="off" placeholder="${placeholder}" aria-describedby="${name}-hint ${name}-error">
       <span class="unit">${unit}</span></div>
     <p class="hint" id="${name}-hint">${hint}</p><p class="error" id="${name}-error" hidden></p></div>`
@@ -78,9 +78,10 @@ function intro() {
 
 function wizard() {
   const step = draft.step
-  const titles = ['', '¿Cuánto vale tu hora?', '¿Cuánto tiempo lleva?', '¿Qué gastos tenés?', '¿Dónde vas a trabajar?', '¿Qué ganancia querés sumar?']
+  const titles = ['', '¿Cuál es tu rubro?', '¿Cuánto vale tu hora?', '¿Cuánto tiempo lleva?', '¿Qué gastos tenés?', '¿Dónde vas a trabajar?', '¿Qué ganancia querés sumar?']
   const descriptions = [
-    '', 'Elegí si ya sabés tu tarifa o si preferís estimarla con un objetivo mensual.',
+    '', 'Elegí la actividad que más se parece a lo que hacés para ver referencias de precios, cuando las haya.',
+    'Elegí si ya sabés tu tarifa o si preferís estimarla con un objetivo mensual.',
     draft.kind === 'product' ? 'Ingresá el tiempo total de la tanda y cuántas unidades vendibles salen.' : 'Estimá cuántas horas le vas a dedicar al servicio completo.',
     `Sumá los materiales de ${stage()} y la parte de los gastos mensuales que le corresponde.`,
     'Incluí solo los gastos extra que genera el lugar. Si no tenés ninguno, dejalos en blanco.',
@@ -91,15 +92,18 @@ function wizard() {
     <div class="progress" aria-hidden="true">${steps.map((_, i) => `<span class="${i < step ? 'filled' : ''}"></span>`).join('')}</div>
     <h1 tabindex="-1">${titles[step]}</h1><p class="lead">${descriptions[step]}</p>
     <form novalidate>
-      ${step === 1 ? choices('rateMode', 'Cómo calcular tu hora', ['direct', 'Ingresar mi tarifa'], ['monthly', 'Estimar mi tarifa']) : ''}
-      ${step === 4 ? choices('location', 'Lugar de trabajo', ['own', 'En mi espacio'], ['client', 'En lo del cliente']) : ''}
+      ${step === stepIndex.activity ? `<div class="field"><label for="activity">Actividad</label><select id="activity" name="activity" required aria-describedby="form-error">
+        <option value="">Elegí tu rubro</option>${activitiesFor(draft.kind).map(({ id, label }) => `<option value="${id}" ${id === draft.activity ? 'selected' : ''}>${label}</option>`).join('')}</select></div>
+        <div id="activity-feedback">${activityGuidance(draft.activity)}</div>` : ''}
+      ${step === stepIndex.rate ? choices('rateMode', 'Cómo calcular tu hora', ['direct', 'Ingresar mi tarifa'], ['monthly', 'Estimar mi tarifa']) : ''}
+      ${step === stepIndex.location ? choices('location', 'Lugar de trabajo', ['own', 'En mi espacio'], ['client', 'En lo del cliente']) : ''}
       <div class="fields">${selectedFields.map(field).join('')}</div>
-      ${step === 1 && draft.rateMode === 'monthly' ? '<p class="rate-preview callout" aria-live="polite"></p>' : ''}
-      ${step === 1 ? referenceButton('Ver referencias de sueldos y precios en Argentina') : ''}
-      ${step === 5 ? `<p class="callout">Estimado ahora${draft.kind === 'product' ? ' (total de la tanda)' : ''}: <strong id="estimate" aria-live="polite"></strong></p>` : ''}
-      <p class="form-error error" role="alert" hidden></p>
+      ${step === stepIndex.rate && draft.rateMode === 'monthly' ? '<p class="rate-preview callout" aria-live="polite"></p>' : ''}
+      ${step === stepIndex.rate ? salaryGuidance(draft.activity) : ''}
+      ${step === stepIndex.profit ? `<p class="callout">Estimado ahora${draft.kind === 'product' ? ' (total de la tanda)' : ''}: <strong id="estimate" aria-live="polite"></strong></p>` : ''}
+      <p id="form-error" class="form-error error" role="alert" hidden></p>
       <div class="actions"><button type="button" class="secondary" data-action="back">${icon('back')} Atrás</button>
-      ${editing ? '<button type="submit" class="primary">Volver al resumen</button>' : `<button type="submit" class="primary">${step === 5 ? 'Ver mi precio' : 'Continuar'} ${icon('arrow')}</button>`}</div>
+      ${editing ? '<button type="submit" class="primary">Volver al resumen</button>' : `<button type="submit" class="primary">${step === stepIndex.profit ? 'Ver mi precio' : 'Continuar'} ${icon('arrow')}</button>`}</div>
     </form>`
 }
 
@@ -119,19 +123,20 @@ function summary() {
       <strong>${money(product ? unit : total)}</strong>
       ${product ? `<p>Total de la tanda de ${number.format(units)} ${units === 1 ? 'unidad' : 'unidades'}: <b>${money(total)}</b></p>` : ''}
     </div>
-    <div class="group-heading details-heading"><h2>Cómo se arma el precio</h2>${edit(1, 'tarifa por hora')}</div>
-    ${group('Tu trabajo', row(`Tiempo de trabajo · ${money(rate)}/h`, labor), 2)}
-    ${group('Materiales y gastos fijos', row('Materiales e insumos', materials) + row('Parte de los gastos fijos', overhead), 3)}
-    ${group('Lugar y traslados', row('Gastos del lugar', local) + (draft.location === 'client' ? row('Gastos de traslado', travel) + row('Tu tiempo de traslado', travelLabor) : ''), 4)}
+    <div class="group-heading details-heading"><h2>Cómo se arma el precio</h2>${edit(stepIndex.rate, 'tarifa por hora')}</div>
+    ${group('Tu trabajo', row(`Tiempo de trabajo · ${money(rate)}/h`, labor), stepIndex.time)}
+    ${group('Materiales y gastos fijos', row('Materiales e insumos', materials) + row('Parte de los gastos fijos', overhead), stepIndex.costs)}
+    ${group('Lugar y traslados', row('Gastos del lugar', local) + (draft.location === 'client' ? row('Gastos de traslado', travel) + row('Tu tiempo de traslado', travelLabor) : ''), stepIndex.location)}
     <dl class="subtotal">${row('Costo total', cost)}</dl>
-    ${group('Ganancia', row(`${number.format(markup)}% sobre el costo`, profit), 5)}
+    ${group('Ganancia', row(`${number.format(markup)}% sobre el costo`, profit), stepIndex.profit)}
     <p class="hint summary-note">No incluye impuestos ni comisiones salvo los que hayas cargado como gastos. Los importes se redondean para mostrar; el precio por unidad se calcula con el total sin redondear.</p>
-    ${referenceButton('Comparar con referencias de Argentina')}
+    <div class="group-heading activity-summary"><h2>Rubro: ${activitiesFor(draft.kind).find(item => item.id === draft.activity)?.label ?? 'Sin elegir'}</h2>${edit(stepIndex.activity, 'rubro')}</div>
+    ${activityGuidance(draft.activity)}
     <div class="actions"><button type="button" class="secondary" data-action="restart">Nueva cotización</button></div>`
 }
 
 function aside() {
-  if (draft.step === 0) return `<aside class="guide intro-guide" aria-label="Sobre la calculadora">
+  if (draft.step === stepIndex.intro) return `<aside class="guide intro-guide" aria-label="Sobre la calculadora">
     <div class="guide-top"><span class="guide-index">01 — GUÍA DE PRECIOS</span><span class="guide-spark" aria-hidden="true">✦</span></div>
     <div class="illustration" aria-hidden="true">
       <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
@@ -142,7 +147,7 @@ function aside() {
     </div>
     <div class="guide-copy"><h2>Que tu precio cuente <em>todo.</em></h2>
       <p>Tu tiempo, tus gastos y lo que querés ganar. Sin fórmulas complicadas.</p>
-      <div class="guide-footer"><span>5 pasos</span><span aria-hidden="true">·</span><span>En pesos argentinos</span></div>
+      <div class="guide-footer"><span>${steps.length} pasos</span><span aria-hidden="true">·</span><span>En pesos argentinos</span></div>
     </div></aside>`
   return `<aside class="guide step-guide" aria-label="Pasos de la cotización">
     <div class="guide-top"><span class="guide-index">TU RECORRIDO</span><span class="guide-spark" aria-hidden="true">✦</span></div>
@@ -160,8 +165,8 @@ function render(focusHeading = false) {
     <div class="header-actions">${installEvent ? '<button class="text-button" data-action="install">Instalar</button>' : ''}
       ${referenceButton('Referencias <span class="wide-only">de Argentina</span>')}</div>
     </div></header>
-    <main class="layout ${draft.step === 0 ? 'landing' : ''} ${draft.step === 6 ? 'summary' : ''}">
-      <article class="main-card">${draft.step === 0 ? intro() : draft.step === 6 ? summary() : wizard()}
+    <main class="layout ${draft.step === stepIndex.intro ? 'landing' : ''} ${draft.step === stepIndex.summary ? 'summary' : ''}">
+      <article class="main-card">${draft.step === stepIndex.intro ? intro() : draft.step === stepIndex.summary ? summary() : wizard()}
       <p id="storage-note" class="hint" role="status" ${storageOk ? 'hidden' : ''}>No se pudo guardar el borrador en este navegador. Podés seguir mientras no cierres esta página.</p></article>
       ${aside()}
     </main>
@@ -172,7 +177,7 @@ function render(focusHeading = false) {
     </div></dialog>`
   for (const name of activeFields(draft, draft.step)) {
     const input = document.getElementById(name) as HTMLInputElement
-    input.value = draft.values[name]
+    input.value = isMoneyField(name) ? formatMoneyInput(draft.values[name]) : draft.values[name]
   }
   updateFeedback()
   if (focusHeading) {
@@ -198,7 +203,7 @@ function updateFeedback() {
   const preview = document.querySelector('.rate-preview')
   const rate = hourlyRate(draft)
   if (preview) preview.textContent = rate && rate > 0
-    ? `Tu hora estimada: ${money(rate)}`
+    ? `Tu hora estimada: ${money(rate)}/h. Tu objetivo mensual dividido por tus horas cobrables; no es una tarifa de mercado.`
     : 'Tu objetivo mensual ÷ horas que podés cobrar = valor de tu hora.'
   const estimate = document.querySelector('#estimate')
   const result = estimate && calculate(draft)
@@ -229,7 +234,20 @@ root.addEventListener('input', ({ target }) => {
   updateFeedback()
 })
 
+root.addEventListener('focusout', ({ target }) => {
+  if (!(target instanceof HTMLInputElement) || !isMoneyField(target.name as Field)) return
+  target.value = formatMoneyInput(target.value)
+})
+
 root.addEventListener('change', ({ target }) => {
+  if (target instanceof HTMLSelectElement && target.name === 'activity') {
+    draft.activity = validActivity(draft.kind, target.value)
+    persist()
+    document.querySelector('#activity-feedback')!.innerHTML = activityGuidance(draft.activity)
+    document.querySelector<HTMLElement>('#form-error')!.hidden = true
+    target.removeAttribute('aria-invalid')
+    return
+  }
   if (!(target instanceof HTMLInputElement) || target.type !== 'radio') return
   if (target.name === 'rateMode') draft.rateMode = target.value === 'monthly' ? 'monthly' : 'direct'
   if (target.name === 'location') draft.location = target.value === 'client' ? 'client' : 'own'
@@ -241,6 +259,15 @@ root.addEventListener('change', ({ target }) => {
 
 root.addEventListener('submit', event => {
   event.preventDefault()
+  const error = root.querySelector<HTMLElement>('.form-error')!
+  if (draft.step === stepIndex.activity && !draft.activity) {
+    error.textContent = 'Elegí un rubro para continuar.'
+    error.hidden = false
+    const select = document.getElementById('activity')
+    select?.setAttribute('aria-invalid', 'true')
+    select?.focus()
+    return
+  }
   const invalid = activeFields(draft, draft.step).find(name => validateField(name, draft.values[name]))
   if (invalid) {
     showErrors = true
@@ -248,14 +275,13 @@ root.addEventListener('submit', event => {
     document.getElementById(invalid)?.focus()
     return
   }
-  const error = root.querySelector<HTMLElement>('.form-error')!
-  if (draft.step === 1 && !hourlyRate(draft)) {
+  if (draft.step === stepIndex.rate && !hourlyRate(draft)) {
     error.textContent = 'La tarifa calculada está fuera de rango. Revisá los valores ingresados.'
     error.hidden = false
     return
   }
-  if (editing || draft.step === 5) {
-    const invalidStep = [1, 2, 3, 4, 5].find(step =>
+  if (editing || draft.step === stepIndex.profit) {
+    const invalidStep = pricingSteps.find(step =>
       activeFields(draft, step).some(name => validateField(name, draft.values[name])),
     )
     if (invalidStep) {
@@ -268,7 +294,7 @@ root.addEventListener('submit', event => {
       return
     }
     editing = false
-    go(6)
+    go(stepIndex.summary)
   } else go(draft.step + 1)
 })
 
@@ -279,14 +305,15 @@ root.addEventListener('click', event => {
   const { action, kind, edit } = button.dataset
   if (kind === 'product' || kind === 'service') {
     draft.kind = kind
-    go(1)
+    draft.activity = validActivity(kind, draft.activity)
+    go(stepIndex.activity)
   } else if (edit) {
     editing = true
     go(Number(edit))
   } else if (action === 'back') {
     if (editing && calculate(draft)) {
       editing = false
-      go(6)
+      go(stepIndex.summary)
       return
     }
     editing = false
@@ -295,7 +322,7 @@ root.addEventListener('click', event => {
     if (!window.confirm('¿Empezar de cero? Se borrarán los datos de esta cotización.')) return
     draft = newDraft()
     editing = false
-    go(0)
+    go(stepIndex.intro)
   } else if (action === 'references' || action === 'close') {
     const dialog = root.querySelector<HTMLDialogElement>('#references-dialog')!
     if (action === 'references') dialog.showModal()
