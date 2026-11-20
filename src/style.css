@@ -149,6 +149,26 @@ dialog h2 { font-size: clamp(2rem, 6vw, 3rem); margin-block: .5rem; }
 .ref-item a { color: var(--forest); font-size: .81rem; display: inline-flex; align-items: center; min-height: 44px; text-underline-offset: 3px; }
 .ref-meta { color: var(--muted); }
 
+.catalog-layout { grid-template-columns: minmax(0, 1fr); }
+.catalog-tabs, .catalog-toolbar { display: flex; flex-wrap: wrap; gap: .65rem; margin-block: 1rem; align-items: end; }
+.catalog-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: .85rem; margin-block: 1rem; }
+.catalog-field { display: grid; gap: .4rem; margin-block: .5rem; min-width: 0; font-size: .87rem; font-weight: 650; }
+.catalog-field input, .catalog-field select { width: 100%; min-width: 0; min-height: 46px; border: 1px solid #b5c2b0; background: #fffdf9; border-radius: 10px; padding: .6rem; color: var(--ink); }
+.catalog-toolbar > .catalog-field { flex: 1 1 230px; }
+.catalog-card { border: 1px solid var(--line); border-radius: 15px; padding: 1rem; margin-top: 1rem; min-width: 0; overflow-wrap: anywhere; }
+.catalog-card h2 { font-size: 1.1rem; }
+.catalog-card details > summary { cursor: pointer; min-height: 44px; padding-block: .7rem; font-weight: 650; }
+.catalog-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 1rem; }
+.catalog-list .catalog-card { display: flex; flex-direction: column; gap: .5rem; }
+.catalog-list .actions { margin-top: auto; padding-top: .5rem; }
+.ingredient { background: #f1f2e7; border-radius: 10px; padding: .8rem; margin-block: .8rem; display: grid; gap: .6rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); align-items: end; }
+.quote-table { overflow-x: auto; }
+.quote-table table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+.quote-table caption { text-align: left; font-weight: 700; padding-block: .75rem; }
+.quote-table th, .quote-table td { text-align: right; padding: .65rem .5rem; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.quote-table th:first-child { text-align: left; }
+.quote-table td { white-space: nowrap; }
+
 @media (min-width: 700px) {
   .header-inner, .layout, .site-footer { width: min(100% - 64px, 1096px); }
   .header-inner { min-height: 76px; }
@@ -163,4 +183,5 @@ dialog h2 { font-size: clamp(2rem, 6vw, 3rem); margin-block: .5rem; }
   .intro-guide { display: flex; flex-direction: column; justify-content: space-between; }
   .illustration { height: 254px; }
   .start-option { padding: .95rem 1rem; }
+  .layout.catalog-layout { grid-template-columns: minmax(0, 1fr); }
 }
