@@ -4,6 +4,7 @@ import { activeFields, calculate, hourlyRate, isMoneyField, newDraft, pricingSte
 import { formatMoneyInput, money } from './money'
 import { activityGuidance, benchmarkContent, salaryGuidance } from './references'
 import { loadDraft, registerOffline, saveDraft } from './storage'
+import { mountCatalog } from './catalog-ui'
 
 const root = document.querySelector<HTMLDivElement>('#app')!
 const number = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 4 })
@@ -42,6 +43,7 @@ let draft: Draft = loaded.draft
 let storageOk = loaded.ok
 let editing = false
 let showErrors = false
+let catalogMode = false
 let installEvent: (Event & { prompt(): Promise<unknown> }) | null = null
 
 const stage = () => draft.kind === 'product' ? 'esta tanda' : 'este servicio'
@@ -68,6 +70,8 @@ function intro() {
     <p class="lead">Poné un precio que cubra tus costos, pague tu tiempo y deje la ganancia que buscás.</p>
     <h2 class="choice-heading">¿Qué querés cotizar?</h2>
     <div class="start-options">
+      <button class="start-option" data-action="catalog"><span class="option-icon product">${icon('box')}</span>
+        <span><strong>Un presupuesto con catálogo</strong><small>Uno o varios ítems, insumos, tiempos y ganancia por producto.</small></span><span class="option-arrow">${icon('arrow')}</span></button>
       <button class="start-option" data-kind="product"><span class="option-icon product">${icon('box')}</span>
         <span><strong>Un producto</strong><small>Por ejemplo, aros, pan o una prenda.</small></span><span class="option-arrow">${icon('arrow')}</span></button>
       <button class="start-option" data-kind="service"><span class="option-icon service">${icon('service')}</span>
@@ -163,18 +167,24 @@ function render(focusHeading = false) {
   root.innerHTML = `<header class="site-header"><div class="header-inner">
     <div class="brand"><span class="brand-icon">${icon('mark')}</span><span>Cuánto vale <b>mi tiempo</b></span></div>
     <div class="header-actions">${installEvent ? '<button class="text-button" data-action="install">Instalar</button>' : ''}
+      <button class="text-button" data-action="${catalogMode ? 'calculator' : 'catalog'}">${catalogMode ? 'Calculadora paso a paso' : 'Catálogo y presupuestos'}</button>
       ${referenceButton('Referencias <span class="wide-only">de Argentina</span>')}</div>
     </div></header>
-    <main class="layout ${draft.step === stepIndex.intro ? 'landing' : ''} ${draft.step === stepIndex.summary ? 'summary' : ''}">
-      <article class="main-card">${draft.step === stepIndex.intro ? intro() : draft.step === stepIndex.summary ? summary() : wizard()}
+    <main class="layout ${catalogMode ? 'catalog-layout' : draft.step === stepIndex.intro ? 'landing' : ''} ${draft.step === stepIndex.summary ? 'summary' : ''}">
+      <article class="main-card">${catalogMode ? '<div id="catalog-host"></div>' : draft.step === stepIndex.intro ? intro() : draft.step === stepIndex.summary ? summary() : wizard()}
       <p id="storage-note" class="hint" role="status" ${storageOk ? 'hidden' : ''}>No se pudo guardar el borrador en este navegador. Podés seguir mientras no cierres esta página.</p></article>
-      ${aside()}
+      ${catalogMode ? '' : aside()}
     </main>
     <footer class="site-footer"><span>Hecho para quienes trabajan por su cuenta.</span><span>Argentina · ARS</span></footer>
     <dialog id="references-dialog" aria-labelledby="references-title"><div class="dialog-body">
       <div class="group-heading"><span class="eyebrow">ARGENTINA · ARS</span><button class="icon-button" data-action="close" aria-label="Cerrar referencias">${icon('close')}</button></div>
       <h2 id="references-title">Referencias de mercado</h2>${benchmarkContent}
     </div></dialog>`
+  if (catalogMode) {
+    mountCatalog(root.querySelector<HTMLElement>('#catalog-host')!)
+    if (focusHeading) root.querySelector('h1')?.focus({ preventScroll: true })
+    return
+  }
   for (const name of activeFields(draft, draft.step)) {
     const input = document.getElementById(name) as HTMLInputElement
     input.value = isMoneyField(name) ? formatMoneyInput(draft.values[name]) : draft.values[name]
@@ -218,6 +228,7 @@ function go(step: number) {
 }
 
 root.addEventListener('input', ({ target }) => {
+  if (catalogMode) return
   if (!(target instanceof HTMLInputElement) || target.type !== 'text') return
   const name = target.name as Field
   const previous = activeFields(draft, draft.step)
@@ -240,6 +251,7 @@ root.addEventListener('focusout', ({ target }) => {
 })
 
 root.addEventListener('change', ({ target }) => {
+  if (catalogMode) return
   if (target instanceof HTMLSelectElement && target.name === 'activity') {
     draft.activity = validActivity(draft.kind, target.value)
     persist()
@@ -258,6 +270,7 @@ root.addEventListener('change', ({ target }) => {
 })
 
 root.addEventListener('submit', event => {
+  if (catalogMode) return
   event.preventDefault()
   const error = root.querySelector<HTMLElement>('.form-error')!
   if (draft.step === stepIndex.activity && !draft.activity) {
@@ -303,7 +316,10 @@ root.addEventListener('click', event => {
   const button = event.target.closest<HTMLButtonElement>('button')
   if (!button) return
   const { action, kind, edit } = button.dataset
-  if (kind === 'product' || kind === 'service') {
+  if (action === 'catalog' || action === 'calculator') {
+    catalogMode = action === 'catalog'
+    render(true)
+  } else if (kind === 'product' || kind === 'service') {
     draft.kind = kind
     draft.activity = validActivity(kind, draft.activity)
     go(stepIndex.activity)
